@@ -215,12 +215,13 @@ public class LocationUtil {
                                                      final long socketTimeout,
                                                      final long priorityTimeout,
                                                      final long cachingTimeout,
-                                                     final ObUserAuth sysUA)
-                                                                            throws ObTableEntryRefreshException {
+                                                     final ObUserAuth sysUA,
+                                                     final String driverClassName)
+                                                                                  throws ObTableEntryRefreshException {
         ObServerAddr addr = serverRoster.getServer(priorityTimeout, cachingTimeout);
         try {
             List<ObServerLdcItem> ss = callServerLdcRefresh(addr, connectTimeout, socketTimeout,
-                sysUA);
+                sysUA, driverClassName);
             serverRoster.resetPriority(addr);
             return ss;
         } catch (ObTableEntryRefreshException e) {
@@ -233,39 +234,42 @@ public class LocationUtil {
         }
     }
 
-    /*
+    /**
      * Format ob server url with the tenant server.
      *
-     * @param obServerAddr
-     * @param connectTimeout
-     * @param socketTimeout
-     * @return
+     * @param obServerAddr observer address
+     * @param connectTimeout connect timeout
+     * @param socketTimeout socket timeout
+     * @param driverClassName driver class name
+     * @return jdbc url
      */
     private static String formatObServerUrl(ObServerAddr obServerAddr, long connectTimeout,
-                                            long socketTimeout) {
+                                            long socketTimeout, String driverClassName) {
         return format(
-            "jdbc:mysql://%s/oceanbase?useUnicode=true&characterEncoding=utf-8&connectTimeout=%d&socketTimeout=%d",
-            obServerAddr.getIp() + ":" + obServerAddr.getSqlPort(), connectTimeout, socketTimeout);
+            "jdbc:%s://%s/oceanbase?useUnicode=true&characterEncoding=utf-8&connectTimeout=%d&socketTimeout=%d",
+            driverClassName.contains("mysql") ? "mysql" : "oceanbase", obServerAddr.getIp() + ":"
+                                                                       + obServerAddr.getSqlPort(),
+            connectTimeout, socketTimeout);
     }
 
-    /*
+    /**
      * Establish db connection to the given database URL, with proxy user/password.
      *
-     * @param url
-     * @return
-     * @throws ObTableEntryRefreshException
+     * @param url jdbc url
+     * @param sysUA sys user auth
+     * @param driverClassName driver class name
+     * @return the jdbc connection
+     * @throws ObTableEntryRefreshException if error occurs
      */
-    private static Connection getMetaRefreshConnection(String url, ObUserAuth sysUA)
-                                                                                    throws ObTableEntryRefreshException {
+    private static Connection getMetaRefreshConnection(String url, ObUserAuth sysUA,
+                                                       String driverClassName)
+                                                                              throws ObTableEntryRefreshException {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+            Class.forName(driverClassName);
         } catch (ClassNotFoundException e) {
-            RUNTIME.error(LCD.convert("01-00006"), e.getMessage(), e);
-            throw new ObTableEntryRefreshException(format(
-                "fail to find com.mysql.cj.jdbc.Driver, errMsg=%s", e.getMessage()), e);
-        } catch (Exception e) {
-            RUNTIME.error(LCD.convert("01-00005"), e.getMessage(), e);
-            throw new ObTableEntryRefreshException("fail to decode proxyro password", e);
+            RUNTIME.error(LCD.convert("01-00006"), driverClassName, e.getMessage(), e);
+            throw new ObTableEntryRefreshException(format("fail to find %s, errMsg=%s",
+                driverClassName, e.getMessage()), e);
         }
 
         try {
@@ -287,15 +291,16 @@ public class LocationUtil {
      */
     private static List<ObServerLdcItem> callServerLdcRefresh(ObServerAddr obServerAddr,
                                                               long connectTimeout,
-                                                              long socketTimeout, ObUserAuth sysUA)
-                                                                                                   throws ObTableEntryRefreshException {
-        String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout);
+                                                              long socketTimeout, ObUserAuth sysUA,
+                                                              String driverClassName)
+                                                                                     throws ObTableEntryRefreshException {
+        String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout, driverClassName);
         List<ObServerLdcItem> ss = new ArrayList<ObServerLdcItem>();
         Connection connection = null;
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            connection = getMetaRefreshConnection(url, sysUA);
+            connection = getMetaRefreshConnection(url, sysUA, driverClassName);
             if (ObGlobal.obVsnMajor() >= 4) {
                 ps = connection.prepareStatement(PROXY_SERVER_STATUS_INFO_V4);
             } else {
@@ -334,14 +339,15 @@ public class LocationUtil {
 
     private static TableEntry callTableEntryRefresh(ObServerAddr obServerAddr, TableEntryKey key,
                                                     long connectTimeout, long socketTimeout,
-                                                    ObUserAuth sysUA, boolean initialized,
+                                                    ObUserAuth sysUA, String driverClassName,
+                                                    boolean initialized,
                                                     TableEntryRefreshCallback<TableEntry> callback)
                                                                                                    throws ObTableEntryRefreshException {
-        String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout);
+        String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout, driverClassName);
         Connection connection = null;
         TableEntry entry;
         try {
-            connection = getMetaRefreshConnection(url, sysUA);
+            connection = getMetaRefreshConnection(url, sysUA, driverClassName);
             entry = callback.execute(connection);
         } catch (ObTableNotExistException e) {
             // avoid to refresh meta for ObTableNotExistException
@@ -390,14 +396,15 @@ public class LocationUtil {
                                                         final long socketTimeout,
                                                         final long priorityTimeout,
                                                         final long cachingTimeout,
-                                                        final ObUserAuth sysUA)
-                                                                               throws ObTableEntryRefreshException {
+                                                        final ObUserAuth sysUA,
+                                                        final String driverClassName)
+                                                                                     throws ObTableEntryRefreshException {
         return callTableEntryRefreshWithPriority(serverRoster, priorityTimeout, cachingTimeout,
             new TableEntryRefreshWithPriorityCallback<TableEntry>() {
                 @Override
                 TableEntry execute(ObServerAddr obServerAddr) throws ObTableEntryRefreshException {
                     return callTableEntryRefresh(obServerAddr, key, connectTimeout, socketTimeout,
-                        sysUA, true, new TableEntryRefreshCallback<TableEntry>() {
+                        sysUA, driverClassName, true, new TableEntryRefreshCallback<TableEntry>() {
                             @Override
                             TableEntry execute(Connection connection)
                                                                      throws ObTableEntryRefreshException {
@@ -418,15 +425,16 @@ public class LocationUtil {
                                                                 final long socketTimeout,
                                                                 final long priorityTimeout,
                                                                 final long cachingTimeout,
-                                                                final ObUserAuth sysUA)
-                                                                                       throws ObTableEntryRefreshException {
+                                                                final ObUserAuth sysUA,
+                                                                final String driverClassName)
+                                                                                             throws ObTableEntryRefreshException {
 
         return callTableEntryRefreshWithPriority(serverRoster, priorityTimeout, cachingTimeout,
             new TableEntryRefreshWithPriorityCallback<TableEntry>() {
                 @Override
                 TableEntry execute(ObServerAddr obServerAddr) throws ObTableEntryRefreshException {
                     return callTableEntryRefresh(obServerAddr, key, connectTimeout, socketTimeout,
-                        sysUA, true, new TableEntryRefreshCallback<TableEntry>() {
+                        sysUA, driverClassName, true, new TableEntryRefreshCallback<TableEntry>() {
                             @Override
                             TableEntry execute(Connection connection)
                                                                      throws ObTablePartitionLocationRefreshException {
@@ -445,10 +453,11 @@ public class LocationUtil {
                                                     final long connectTimeout,//
                                                     final long socketTimeout,
                                                     final ObUserAuth sysUA,
+                                                    final String driverClassName,
                                                     final boolean initialized)
                                                                               throws ObTableEntryRefreshException {
         return callTableEntryRefresh(randomObServers(rsList), key, connectTimeout, socketTimeout,
-            sysUA, initialized, new TableEntryRefreshCallback<TableEntry>() {
+            sysUA, driverClassName, initialized, new TableEntryRefreshCallback<TableEntry>() {
                 @Override
                 TableEntry execute(Connection connection) throws ObTableEntryRefreshException {
                     return getTableEntryFromRemote(connection, key, initialized);
@@ -689,15 +698,17 @@ public class LocationUtil {
 
     public static Long getTableIdFromRemote(ObServerAddr obServerAddr, ObUserAuth sysUA,
                                             long connectTimeout, long socketTimeout,
-                                            String tenantName, String databaseName, String tableName)
-                                                                                                     throws ObTableEntryRefreshException {
+                                            String driverClassName, String tenantName,
+                                            String databaseName, String tableName)
+                                                                                  throws ObTableEntryRefreshException {
         Long tableId = null;
         Connection connection = null;
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout);
-            connection = getMetaRefreshConnection(url, sysUA);
+            String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout,
+                driverClassName);
+            connection = getMetaRefreshConnection(url, sysUA, driverClassName);
             ps = connection.prepareStatement(PROXY_TABLE_ID_SQL);
             ps.setString(1, tenantName);
             ps.setString(2, databaseName);
@@ -729,15 +740,16 @@ public class LocationUtil {
 
     public static ObIndexInfo getIndexInfoFromRemote(ObServerAddr obServerAddr, ObUserAuth sysUA,
                                                      long connectTimeout, long socketTimeout,
-                                                     String indexTableName)
-                                                                           throws ObTableEntryRefreshException {
+                                                     String driverClassName, String indexTableName)
+                                                                                                   throws ObTableEntryRefreshException {
         ObIndexInfo indexInfo = null;
         Connection connection = null;
         PreparedStatement ps = null;
         ResultSet rs = null;
         try {
-            String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout);
-            connection = getMetaRefreshConnection(url, sysUA);
+            String url = formatObServerUrl(obServerAddr, connectTimeout, socketTimeout,
+                driverClassName);
+            connection = getMetaRefreshConnection(url, sysUA, driverClassName);
             ps = connection.prepareStatement(PROXY_INDEX_INFO_SQL);
             ps.setString(1, indexTableName);
             rs = ps.executeQuery();

@@ -156,6 +156,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
     private int                                               odpPort                                 = 2883;
 
     private ObTable                                           odpTable                                = null;
+    private String                                            driverClassName                         = "com.mysql.cj.jdbc.Driver";
 
     /*
      * Init.
@@ -366,7 +367,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
         TableEntry tableEntry = loadTableEntryRandomly(rsList,//
             rootServerKey,//
             tableEntryAcquireConnectTimeout,//
-            tableEntryAcquireSocketTimeout, sysUA, initialized);
+            tableEntryAcquireSocketTimeout, sysUA, driverClassName, initialized);
         BOOT.info("{} success to get tableEntry with rootServerKey all_dummy_tables {}",
             this.database, JSON.toJSON(tableEntry));
 
@@ -423,7 +424,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
 
         List<ObServerLdcItem> ldcServers = getServerLdc(serverRoster,
             tableEntryAcquireConnectTimeout, tableEntryAcquireSocketTimeout,
-            serverAddressPriorityTimeout, serverAddressCachingTimeout, sysUA);
+            serverAddressPriorityTimeout, serverAddressCachingTimeout, sysUA, driverClassName);
 
         this.serverRoster.resetServerLdc(ObServerLdcLocation.buildLdcLocation(ldcServers,
             currentIDC, regionFromOcp));
@@ -848,7 +849,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
             TableEntry tableEntry = loadTableEntryRandomly(rsList,//
                 allDummyKey,//
                 tableEntryAcquireConnectTimeout,//
-                tableEntryAcquireSocketTimeout, sysUA, initialized);
+                tableEntryAcquireSocketTimeout, sysUA, driverClassName, initialized);
 
             List<ReplicaLocation> replicaLocations = tableEntry.getTableLocation()
                 .getReplicaLocations();
@@ -899,7 +900,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
 
             List<ObServerLdcItem> ldcServers = getServerLdc(serverRoster,
                 tableEntryAcquireConnectTimeout, tableEntryAcquireSocketTimeout,
-                serverAddressPriorityTimeout, serverAddressCachingTimeout, sysUA);
+                serverAddressPriorityTimeout, serverAddressCachingTimeout, sysUA, driverClassName);
 
             // reset Server LDC location.
             String regionFromOcp = ocpModel.getIdc2Region(currentIDC);
@@ -962,8 +963,8 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
                 ObServerAddr addr = serverRoster.getServer(serverAddressPriorityTimeout,
                     serverAddressCachingTimeout);
                 dataTableId = LocationUtil.getTableIdFromRemote(addr, sysUA,
-                    tableEntryAcquireConnectTimeout, tableEntryAcquireSocketTimeout, tenantName,
-                    database, dataTableName);
+                    tableEntryAcquireConnectTimeout, tableEntryAcquireSocketTimeout,
+                    driverClassName, tenantName, database, dataTableName);
             } else {
                 dataTableId = entry.getTableId();
             }
@@ -1006,7 +1007,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
                         serverAddressCachingTimeout);
                     indexInfo = getIndexInfoFromRemote(serverAddr, sysUA,
                         tableEntryAcquireConnectTimeout, tableEntryAcquireSocketTimeout,
-                        indexTableName);
+                        driverClassName, indexTableName);
                     if (indexInfo != null) {
                         indexinfos.put(indexName, indexInfo);
                     } else {
@@ -1217,7 +1218,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
                     tableEntryAcquireConnectTimeout,//
                     tableEntryAcquireSocketTimeout,//
                     serverAddressPriorityTimeout, //
-                    serverAddressCachingTimeout, sysUA);
+                    serverAddressCachingTimeout, sysUA, driverClassName);
             } else {
                 // if table entry is not exist we should fetch partition info and table locations
                 tableEntry = loadTableEntryWithPriority(serverRoster, //
@@ -1225,7 +1226,7 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
                     tableEntryAcquireConnectTimeout,//
                     tableEntryAcquireSocketTimeout,//
                     serverAddressPriorityTimeout,//
-                    serverAddressCachingTimeout, sysUA);
+                    serverAddressCachingTimeout, sysUA, driverClassName);
 
                 if (tableEntry.isPartitionTable()) {
                     switch (runningMode) {
@@ -3032,6 +3033,14 @@ public class ObTableClient extends AbstractObTableClient implements Lifecycle {
      */
     public void setCurrentIDC(String idc) {
         this.currentIDC = idc;
+    }
+
+    /**
+     * Set jdbc driver class name.
+     * @param driverClassName the driver class name
+     */
+    public void setDriverClassName(String driverClassName) {
+        this.driverClassName = driverClassName;
     }
 
     @Override
